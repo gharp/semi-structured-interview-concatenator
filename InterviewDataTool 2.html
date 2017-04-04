@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Interview Data Tool</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="http://www.w3schools.com/lib/w3.css">
+<!-- <link rel="stylesheet" href="http://www.w3schools.com/lib/w3-theme-blue.css"> -->
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+<style type="text/css">
+.data {
+/*  font-family: "Droid Sans Mono", monospace; */
+/*  font-family: "Helvetica", sans-serif; */
+/*  font-size: 12px;*/
+}
+#input-file {
+  width: 100%;
+  height: 200px;
+}
+#output-file {
+  width: 100%;
+  height: 200px;
+}
+#export {
+  display: none;
+}
+#edit {
+  display: none;
+}
+.clear-button {
+  cursor: pointer;
+  border: none;
+  background-color: inherit;
+}
+.clear-button:hover {
+  visibility: visible;
+  background-color: darkgrey;
+}
+.chunk {
+  cursor: grab;
+}
+.navbtn {
+  margin-left: 8px;
+}
+.chunk-editor {
+  width: 80%;
+  min-height: 100px;
+}
+</style>
+<script>
+
+
+// Object Constructors
+
+var interview;
+var interviewHistory = [];
+
+function Statement(s, t) {
+  this.speaker = s;
+  this.text = t;
+}
+
+function isIn(v, s) {
+  for (var j = 0; j <= s.length; j++) {
+    if (v === s[j])
+      return true;
+  }
+  return false;
+}
+
+function speakers(inter) {
+  var result = [];
+  inter.statements.forEach( function (s) {
+    if (result.every(function (x) { return !(x === s.speaker); }))
+      result.push(s.speaker);
+  });
+  return result;
+}
+
+function Interview(s) {
+  this.statements = (s === undefined) ? [] : s;
+}
+
+function concatenate(interview, i, j) {
+  //alert(i,j)
+  if (i == j) {
+    alert("Usage error: Concatenating a statement with itself");
+    return interview;
+  } else if (i > j) {
+    alert("Usage error: Appending a statement to a later statement");
+    return interview;
+  }
+  var speaker = interview.statements[i].speaker;
+  var text = "";
+  if (interview.statements[i].speaker == interview.statements[j].speaker) {
+    text = interview.statements[i].text.trim() + " " + interview.statements[j].text;
+  } else {
+    text = interview.statements[i].text.trim() + " << " + interview.statements[j].text.trim() + " >> ";
+  }
+  /*else {
+    alert("Usage error: Appending text to a statement by the interviewer");
+  }*/
+  return new Interview(interview.statements.slice(0,i).concat(
+    [new Statement(speaker, text)], interview.statements.slice(i+1,j), interview.statements.slice(j+1)));
+}
+
+function clearStatement(interview, i) {
+  return new Interview(interview.statements.slice(0,i).concat(interview.statements.slice(i+1)));
+}
+
+/* *******************
+   Back-end Functions
+   ******************* */
+// These functions have no side effects --- just take inputs and return output
+
+function processText(text) {
+  text = text.replace("\u2018", "'").replace("\u2019", "'");
+  text = text.replace("\u201c","\"").replace("\u201d", "\"").replace("\t","");
+  text = text.replace("\u2013", "--").replace("\u2014", "---").replace("\u2026","...");
+  return text;
+}
+
+function processInputLines(lines) {
+  var result = []; // the interview array that we will return
+  var speakerPattern = /([\w ]+):\s*$/;
+  // temporary values for the for loop:
+  var speaker = "";
+  var text = "";
+  for (var i = 0; i < lines.length; i++) {
+    var match = lines[i].match(speakerPattern)
+    if (match != null) {
+      if (text != "") {
+        result.push(new Statement(speaker, text));
+      }
+      speaker = match[1];
+      text = "";
+    } else {
+      text += processText(lines[i]) + "\n";
+    }
+  }
+  // still need to append the last statement
+  if (speaker != "" && text != "") {
+    result.push(new Statement(speaker, text));
+  }
+  return new Interview(result);
+}
+
+/* *******************
+   Front-end Functions
+   ******************* */
+// These functions change HTML objects on the page, and also change state
+// variables like interview.
+// They have side-effects.
+
+
+function undoStep() {
+  if (interviewHistory.length > 1) {
+    interview = interviewHistory.pop();
+    displayInterview();
+  }
+  return;
+}
+
+function chunkStyleClass(i) {
+  var style = "w3-panel w3-padding-8 w3-border w3-border-grey w3-round w3-display-container data chunk";
+  //if () { // Figure out how to test if i in selected
+  //  style += " w3-blue w3-rightbar w3-leftbar w3-border-blue";
+  //} else if (i == cursor) {
+  //  style += " w3-rightbar w3-leftbar w3-border-blue cursor";
+  //alert(interview.speakers());
+  var speaker_styles = [" w3-light-grey", "", " w3-light-blue"];
+  style += speaker_styles[speakers(interview).indexOf(interview.statements[i].speaker)];
+  return style;
+}
+
+function drag(e) {
+  e.dataTransfer.setData("text", e.target.id);
+}
+
+function allowDrop(e) {
+  e.preventDefault();
+}
+
+function drop(e) {
+  // concatenate chunk j to chunk i
+  e.preventDefault();
+  var j = parseInt(e.dataTransfer.getData("text").split("-")[1]);
+  var i = parseInt(e.target.id.split("-")[1]);
+  //alert(i);
+  //alert(j);
+  if (i != j) {
+    interviewHistory.push(new Interview(interview.statements));
+    interview = concatenate(interview, i,j);
+    displayInterview();
+  }
+  return;
+}
+
+function clickClear(e) {
+  var i = parseInt(e.target.id.split("-")[1]);
+  interviewHistory.push(new Interview(interview.statements));
+  interview = clearStatement(interview, i);
+  displayInterview();
+  return;
+}
+
+function editChunk(i) {
+  // replace chunk with textarea for editing its content
+  displayInterview();
+  var editor = $("<textarea></textarea>")
+  editor.attr("id", "editor-" + i);
+  editor.addClass("chunk-editor");
+  editor.val(interview.statements[i].text);
+  var submit = $("<button></button>").text("Done");
+  submit.addClass("w3-small w3-btn w3-round w3-blue w3-right");
+  submit.attr("onclick", "doneEditing(" + i + ")");
+  // make into a layout-container with R: [text box most of the space] [done]
+  // and when user clicks off of editor, trigger doneEditing.
+  $("#statement-" + i).text(interview.statements[i].speaker + ": ");
+  $("#statement-" + i).append(editor);
+  $("#statement-" + i).append(submit);
+  return;
+}
+
+function doneEditing(i) {
+  //var i = parseInt(e.target.id.split("-")[1]);
+  var text = $("#editor-" + i).val();
+  var result = new Statement(interview.statements[i].speaker, text);
+  interviewHistory.push(new Interview(interview.statements));
+  interview = new Interview(interview.statements.slice(0,i).concat([result], interview.statements.slice(i+1)));
+  displayInterview();
+}
+
+function clearBtnHTML(i){
+  var clear = $("<button></button>")
+  var icon = $("<i></i>").text("clear");
+  icon.attr("id", "clearicon-" + i);
+  icon.attr("onclick", "clickClear(event)");
+  // the delete button
+  icon.addClass("material-icons");
+  clear.attr("id", "clear-" + i);
+  clear.addClass("clear-button w3-display-topright");
+  //clear.attr("onclick", "clickClear(event)");
+  clear.append(icon);
+  clear.hide();
+  return clear;
+}
+
+function chunkHTML(i) {
+  var element = $("<div></div>");
+  element.addClass(chunkStyleClass(i));
+  element.attr("id","statement-" + i);
+  element.text(interview.statements[i].speaker + ":\n"
+              + interview.statements[i].text);
+  //var f = clickStatement(i);
+  //element.click(f);
+  element.attr("draggable", "true");
+  element.attr("ondragstart", "drag(event)");
+  element.attr("ondragover", "allowDrop(event)");
+  element.attr("ondrop", "drop(event)");
+  element.dblclick(function() { editChunk(i); });
+  element.mouseenter( function() { $("#clear-" + i).show(); });
+  element.mouseover( function() { $("#clear-" + i).show(); });
+  element.mouseleave( function() { $("#clear-" + i).hide(); });
+  return element;
+}
+
+function editTabButtons() {
+  var buttonsDiv = $("<div></div>");
+  buttonsDiv.addClass("w3-display-right")
+  var backToImportBtn = $("<button></button>").text("Back to Import");
+  backToImportBtn.addClass("w3-btn w3-round w3-blue navbtn");
+  backToImportBtn.attr("onclick", "backToImport()");
+  var undoBtn = $("<button></button>").text("Undo");
+  undoBtn.addClass("w3-btn w3-round w3-blue navbtn");
+  undoBtn.attr("onclick", "undoStep()");
+  var exportButton = $("<button></button>").text("Export");
+  exportButton.addClass("w3-btn w3-round w3-blue navbtn");
+  exportButton.attr("onclick", "exportInterview()");
+  buttonsDiv.append(backToImportBtn, undoBtn, exportButton);
+  return buttonsDiv;
+}
+
+function displayInterview() {
+  $("#edit").empty("div");
+  var header = $("<div></div>");
+  header.addClass("w3-display-container header");
+  header.append("<h3>Edit Interview</h3>");
+  header.append(editTabButtons());
+  $("#edit").append(header);
+  for (var i = 0; i < interview.statements.length; i++) {
+    $("#edit").append(chunkHTML(i).append(clearBtnHTML(i)));
+  }
+  var footer = $("<div></div>");
+  footer.addClass("w3-display-container w3-padding-8")
+  footer.append(editTabButtons());
+  $("#edit").append(footer);
+}
+
+function backToImport() {
+  if (confirm("Are you sure? All changes will be lost."))
+    doneButton();
+}
+
+function importBtn() {
+  if ($("#input-file").val() != "") {
+    interview = processInputLines($("#input-file").val().split('\n'));
+    displayInterview();
+    $(".tab").hide()
+    $("#edit").show();
+  } //else {
+  //  alert("There's nothing to import!");
+  //}
+}
+
+function exportInterview() {
+  var result = "";
+  for (var i = 0; i < interview.statements.length; i++) {
+    result += interview.statements[i].speaker + ":\n" + interview.statements[i].text;
+  }
+  $("#output-file").val(result);
+  $(".tab").hide();
+  $("#export").show();
+}
+
+function doneButton() {
+  interview = Interview();
+  $("#input-file").val("");
+  $(".tab").hide();
+  $("#import").show();
+}
+
+</script>
+</head>
+<body>
+
+<div class="w3-container w3-blue">
+  <div class="w3-content">
+    <h1>Interview Data Tool</h1>
+  </div>
+</div>
+
+<div class="w3-layout-container w3-content">
+<div class="w3-container tab" id="import">
+  <h3>Import Interview</h3>
+  <p>Paste the interview into the text box below.</p>
+  <p><textarea class="data" id="input-file"></textarea></p>
+  <p><button type="button" class="w3-right w3-btn w3-round w3-blue" onclick="importBtn()">Import</button></p>
+</div>
+
+<div class="w3-container tab" id="edit">
+  <!-- handled by JavaScript -->
+</div>
+
+<div class="w3-container tab" id="export">
+  <h3>Export Interview</h3>
+  <p><textarea class="data" id="output-file"></textarea></p>
+  <p><button type="button" class=" w3-btn w3-right w3-round w3-blue" onclick="doneButton()">Done</button></p>
+</div>
+</div>
+
+</body>
+</html>
